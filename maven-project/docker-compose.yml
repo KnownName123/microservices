@@ -1,0 +1,23 @@
+services:
+  db1:
+    image: postgres:17-alpine
+    container_name: resource-service-db
+    restart: always
+    environment:
+      POSTGRES_DB: resource_service_db
+      POSTGRES_USER: user1
+      POSTGRES_PASSWORD: pass1
+    ports:
+      - "5432:5432"
+
+  db2:
+    image: postgres:17-alpine
+    container_name: song-service-db
+    restart: always
+    environment:
+      POSTGRES_DB: song_service_db
+      POSTGRES_USER: user2
+      POSTGRES_PASSWORD: pass2
+    ports:
+      - "5433:5432"
+
