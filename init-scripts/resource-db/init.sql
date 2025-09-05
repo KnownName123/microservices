@@ -1,0 +1,4 @@
+CREATE TABLE IF NOT EXISTS resource (
+    id BIGSERIAL PRIMARY KEY,
+    data BIGINT NOT NULL
+);
