@@ -1,0 +1,36 @@
+spring:
+  application:
+    name: gateway-service
+
+server:
+  port: ${SERVER_PORT:8080}
+
+eureka:
+  instance:
+    hostname: localhost
+    prefer-ip-address: true
+  client:
+    service-url:
+      defaultZone: ${EUREKA_CLIENT_SERVICEURL_DEFAULTZONE:http://localhost:8761/eureka/}
+    register-with-eureka: true
+    fetch-registry: true
+
+logging:
+  level:
+    org.springframework.cloud.gateway: DEBUG
+    org.springframework.cloud.gateway.filter: DEBUG
+    org.springframework.cloud.gateway.handler: DEBUG
+    org.springframework.web.reactive.function.client.ExchangeFunctions: DEBUG
+
+
+cloud:
+  gateway:
+    routes:
+      - id: song-service
+        uri: lb://song-service
+        predicates:
+          - Path=/songs/**
+      - id: resource-service
+        uri: lb://resource-service
+        predicates:
+          - Path=/resources/**
