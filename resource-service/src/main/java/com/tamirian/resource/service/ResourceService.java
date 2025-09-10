@@ -1,6 +1,5 @@
 package com.tamirian.resource.service;
 
-import org.springframework.beans.factory.annotation.Value;
 import com.tamirian.resource.dto.SongMetadataDto;
 import com.tamirian.resource.exception.BadRequestException;
 import com.tamirian.resource.exception.ResourceNotFoundException;
@@ -16,6 +15,7 @@ import org.apache.tika.metadata.XMPDM;
 import org.apache.tika.parser.Parser;
 import org.apache.tika.parser.mp3.Mp3Parser;
 import org.apache.tika.sax.BodyContentHandler;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
@@ -29,19 +29,20 @@ import java.util.*;
 @Service
 @RequiredArgsConstructor
 public class ResourceService {
-    private final ResourceRepository repository;
+
     private final Tika tika = new Tika();
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final ResourceRepository repository;
+    private final RestTemplate restTemplate;
+
     @Value("${SONG_SERVICE_URL:http://localhost:8082/songs}")
-    private String SONG_SERVICE_URL;
+    private String songServiceUrl;
 
     @Transactional
-    public Long upload(byte[] mp3) throws IOException, TikaException, SAXException {
+    public Long upload(byte[] mp3) throws IOException, SAXException, TikaException {
         validateMp3(mp3);
-        Resource saved = repository.save(createResource(mp3));
-        SongMetadataDto meta = extractMetadata(mp3, saved.getId());
-        sendMetadataToSongService(meta);
-        return saved.getId();
+        Resource resource = repository.save(createResource(mp3));
+        SongMetadataDto metadata = extractMetadata(mp3, resource.getId());
+        return sendMetadata(metadata);
     }
 
     public byte[] getResource(String idStr) {
@@ -69,8 +70,8 @@ public class ResourceService {
     }
 
     public SongMetadataDto extractMetadata(byte[] mp3, Long resourceId) throws IOException, SAXException, TikaException {
-        BodyContentHandler handler = new BodyContentHandler();
         Metadata metadata = new Metadata();
+        BodyContentHandler handler = new BodyContentHandler();
         Parser parser = new Mp3Parser();
         try (InputStream input = new ByteArrayInputStream(mp3)) {
             parser.parse(input, handler, metadata, new org.apache.tika.parser.ParseContext());
@@ -78,11 +79,11 @@ public class ResourceService {
 
         return new SongMetadataDto(
                 resourceId.toString(),
-                defaultString(metadata.get(TikaCoreProperties.TITLE), "Unknown Title", 100),
-                defaultString(metadata.get(XMPDM.ARTIST), "Unknown Artist", 100),
-                defaultString(metadata.get(XMPDM.ALBUM), "Unknown Album", 100),
+                truncateOrDefault(metadata.get(TikaCoreProperties.TITLE), "Unknown Title", 100),
+                truncateOrDefault(metadata.get(XMPDM.ARTIST), "Unknown Artist", 100),
+                truncateOrDefault(metadata.get(XMPDM.ALBUM), "Unknown Album", 100),
                 formatDuration(metadata.get(XMPDM.DURATION)),
-                validYear(metadata.get(XMPDM.RELEASE_DATE))
+                validateYear(metadata.get(XMPDM.RELEASE_DATE))
         );
     }
 
@@ -98,15 +99,11 @@ public class ResourceService {
         return resource;
     }
 
-    private Long sendMetadataToSongService(SongMetadataDto meta) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        HttpEntity<SongMetadataDto> entity = new HttpEntity<>(meta, headers);
-
+    private Long sendMetadata(SongMetadataDto metadata) {
+        HttpEntity<SongMetadataDto> entity = new HttpEntity<>(metadata, createJsonHeaders());
         ResponseEntity<Map<String, Integer>> response = restTemplate.exchange(
-                SONG_SERVICE_URL, HttpMethod.POST, entity, new ParameterizedTypeReference<>() {}
+                songServiceUrl, HttpMethod.POST, entity, new ParameterizedTypeReference<>() {}
         );
-
         Map<String, Integer> body = response.getBody();
         if (body == null || !body.containsKey("id")) {
             throw new RuntimeException("Song Service returned invalid response");
@@ -115,21 +112,20 @@ public class ResourceService {
     }
 
     private void deleteFromSongService(String csv) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        HttpEntity<Void> entity = new HttpEntity<>(headers);
-
+        HttpEntity<Void> entity = new HttpEntity<>(createJsonHeaders());
         ResponseEntity<Map> response = restTemplate.exchange(
-                SONG_SERVICE_URL + "?id=" + csv,
-                HttpMethod.DELETE,
-                entity,
-                Map.class
+                songServiceUrl + "?id=" + csv, HttpMethod.DELETE, entity, Map.class
         );
-
         Map<String, List<Long>> body = response.getBody();
         if (body == null || !body.containsKey("ids")) {
             throw new RuntimeException("Song Service returned invalid response");
         }
+    }
+
+    private HttpHeaders createJsonHeaders() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        return headers;
     }
 
     private Long parsePositiveId(String idStr) {
@@ -144,12 +140,8 @@ public class ResourceService {
     }
 
     private List<Long> parseCsvIds(String csv) {
-        if (csv == null || csv.isBlank()) {
-            throw new BadRequestException("Invalid CSV string: empty or null");
-        }
-        if (csv.length() > 200) {
-            throw new BadRequestException("Invalid CSV string: length " + csv.length() + " exceeds max allowed 200");
-        }
+        if (csv == null || csv.isBlank()) throw new BadRequestException("CSV string is empty or null");
+        if (csv.length() > 200) throw new BadRequestException("CSV string exceeds max length 200");
 
         return Arrays.stream(csv.split(","))
                 .map(String::trim)
@@ -159,12 +151,12 @@ public class ResourceService {
                 .toList();
     }
 
-    private String defaultString(String value, String defaultValue, int maxLength) {
+    private String truncateOrDefault(String value, String defaultValue, int maxLength) {
         value = (value == null || value.isBlank()) ? defaultValue : value;
         return value.length() > maxLength ? value.substring(0, maxLength) : value;
     }
 
-    private String validYear(String year) {
+    private String validateYear(String year) {
         if (year != null && year.matches("^(19|20)\\d{2}$")) return year;
         return "1900";
     }
