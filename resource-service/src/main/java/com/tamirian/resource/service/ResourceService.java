@@ -34,7 +34,7 @@ public class ResourceService {
     private final ResourceRepository repository;
     private final RestTemplate restTemplate;
 
-    @Value("${SONG_SERVICE_URL:http://localhost:8082/songs}")
+    @Value("${SONG_SERVICE_URL:http://song-service/songs}")
     private String songServiceUrl;
 
     @Transactional
