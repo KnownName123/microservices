@@ -140,8 +140,14 @@ public class ResourceService {
     }
 
     private List<Long> parseCsvIds(String csv) {
-        if (csv == null || csv.isBlank()) throw new BadRequestException("CSV string is empty or null");
-        if (csv.length() > 200) throw new BadRequestException("CSV string exceeds max length 200");
+        if (csv == null || csv.isBlank()) {
+            throw new BadRequestException("CSV string must not be empty");
+        }
+        if (csv.length() > 200) {
+            throw new BadRequestException(
+                    "CSV string is too long: received " + csv.length() + " characters, maximum allowed is 200"
+            );
+        }
 
         return Arrays.stream(csv.split(","))
                 .map(String::trim)
